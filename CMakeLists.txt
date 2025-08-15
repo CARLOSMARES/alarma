@@ -42,6 +42,7 @@ add_custom_command(
 
 set(GRESOURCE_SRC ${GRESOURCE_C})
 
+
 add_executable(alarma
     main.c
     model/alarma.c
@@ -50,7 +51,18 @@ add_executable(alarma
     ${GRESOURCE_SRC}
 )
 
+
 target_link_libraries(alarma ${GTK3_LIBRARIES} ${LIBAO_LIBRARIES} ${LIBSNDFILE_LIBRARIES})
-install(FILES ${CMAKE_SOURCE_DIR}/resource/icono.png DESTINATION share/pixmaps)
+install(TARGETS alarma RUNTIME DESTINATION bin)
 install(FILES ${CMAKE_SOURCE_DIR}/alarma.desktop DESTINATION share/applications)
-install(FILES ${CMAKE_SOURCE_DIR}/resource/alarma.wav DESTINATION share/sounds)
+# install(FILES ${CMAKE_SOURCE_DIR}/resource/icono.png DESTINATION share/pixmaps)
+# install(FILES ${CMAKE_SOURCE_DIR}/resource/alarma.wav DESTINATION share/sounds)
+
+# Objetivo make uninstall
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake_uninstall.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake"
+    IMMEDIATE @ONLY)
+
+add_custom_target(uninstall
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
