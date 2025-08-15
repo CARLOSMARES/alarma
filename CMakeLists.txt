@@ -24,27 +24,33 @@ include_directories(
 link_directories(${GTK3_LIBRARY_DIRS} ${LIBAO_LIBRARY_DIRS} ${LIBSNDFILE_LIBRARY_DIRS})
 add_definitions(${GTK3_CFLAGS_OTHER} ${LIBAO_CFLAGS_OTHER} ${LIBSNDFILE_CFLAGS_OTHER})
 
+
+# --- GResource: empaquetar icono.png y alarma.wav ---
+find_program(GLIB_COMPILE_RESOURCES glib-compile-resources)
+set(GRESOURCE_XML ${CMAKE_SOURCE_DIR}/resource/alarma.gresource.xml)
+set(GRESOURCE_C ${CMAKE_BINARY_DIR}/alarma-resources.c)
+
+add_custom_command(
+    OUTPUT ${GRESOURCE_C}
+    COMMAND ${GLIB_COMPILE_RESOURCES}
+        --target=${GRESOURCE_C}
+        --generate-source
+        --sourcedir=${CMAKE_SOURCE_DIR}/resource
+        ${GRESOURCE_XML}
+    DEPENDS ${GRESOURCE_XML} ${CMAKE_SOURCE_DIR}/resource/icono.png ${CMAKE_SOURCE_DIR}/resource/alarma.wav
+)
+
+set(GRESOURCE_SRC ${GRESOURCE_C})
+
 add_executable(alarma
     main.c
     model/alarma.c
     view/ui.c
     controller/controller.c
+    ${GRESOURCE_SRC}
 )
 
 target_link_libraries(alarma ${GTK3_LIBRARIES} ${LIBAO_LIBRARIES} ${LIBSNDFILE_LIBRARIES})
-
-# Copiar alarma.wav al directorio de build tras compilar
-add_custom_command(TARGET alarma POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/resource/alarma.wav $<TARGET_FILE_DIR:alarma>/alarma.wav)
-
-# Copiar icono.png al directorio de build tras compilar
-add_custom_command(TARGET alarma POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/resource/icono.png $<TARGET_FILE_DIR:alarma>/icono.png)
-
-# Soporte para make install
-install(TARGETS alarma RUNTIME DESTINATION bin)
 install(FILES ${CMAKE_SOURCE_DIR}/resource/icono.png DESTINATION share/pixmaps)
 install(FILES ${CMAKE_SOURCE_DIR}/alarma.desktop DESTINATION share/applications)
 install(FILES ${CMAKE_SOURCE_DIR}/resource/alarma.wav DESTINATION share/sounds)

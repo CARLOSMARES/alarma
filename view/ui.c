@@ -1,3 +1,4 @@
+
 #include "ui.h"
 #include "../model/alarma.h"
 #include <gtk/gtk.h>
@@ -6,6 +7,68 @@
 #include <signal.h>
 #include <ao/ao.h>
 #include <sndfile.h>
+#include <string.h>
+
+// --- Funciones auxiliares para leer desde memoria (GResource + libsndfile) ---
+struct MemFile
+{
+    const char *data;
+    sf_count_t size;
+    sf_count_t pos;
+};
+
+static sf_count_t mem_get_filelen(void *user_data)
+{
+    struct MemFile *f = user_data;
+    return f->size;
+}
+static sf_count_t mem_seek(sf_count_t offset, int whence, void *user_data)
+{
+    struct MemFile *f = user_data;
+    switch (whence)
+    {
+    case SEEK_SET:
+        f->pos = offset;
+        break;
+    case SEEK_CUR:
+        f->pos += offset;
+        break;
+    case SEEK_END:
+        f->pos = f->size + offset;
+        break;
+    }
+    if (f->pos < 0)
+        f->pos = 0;
+    if (f->pos > f->size)
+        f->pos = f->size;
+    return f->pos;
+}
+static sf_count_t mem_read(void *ptr, sf_count_t count, void *user_data)
+{
+    struct MemFile *f = user_data;
+    if (f->pos + count > f->size)
+        count = f->size - f->pos;
+    memcpy(ptr, f->data + f->pos, count);
+    f->pos += count;
+    return count;
+}
+static sf_count_t mem_write(const void *ptr, sf_count_t count, void *user_data) { return 0; }
+static sf_count_t mem_tell(void *user_data)
+{
+    struct MemFile *f = user_data;
+    return f->pos;
+}
+#include "ui.h"
+#include "../model/alarma.h"
+#include <gtk/gtk.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <ao/ao.h>
+#include <sndfile.h>
+#include <string.h>
+
+// --- Funciones auxiliares para leer desde memoria (GResource + libsndfile) ---
 #include <pthread.h>
 #include <time.h>
 
@@ -41,13 +104,35 @@ static int alarma_sonando = 0;
 void *hilo_sonar_alarma(void *arg)
 {
     SF_INFO sfinfo;
-    SNDFILE *sndfile = sf_open("alarma.wav", SFM_READ, &sfinfo);
-    if (!sndfile)
+    // Abrir alarma.wav desde recurso embebido
+    GError *snd_error = NULL;
+    GBytes *snd_bytes = g_resources_lookup_data("/com/alarma/app/alarma.wav", G_RESOURCE_LOOKUP_FLAGS_NONE, &snd_error);
+    if (!snd_bytes)
     {
-        fprintf(stderr, "[ERROR] No se pudo abrir alarma.wav\n");
-        GtkWidget *dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, "No se pudo abrir alarma.wav");
+        fprintf(stderr, "[ERROR] No se pudo abrir alarma.wav desde recurso\n");
+        GtkWidget *dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, "No se pudo abrir alarma.wav (recurso)");
         gtk_dialog_run(GTK_DIALOG(dialog));
         gtk_widget_destroy(dialog);
+        alarma_sonando = 0;
+        return NULL;
+    }
+    gsize snd_size = 0;
+    const void *snd_data = g_bytes_get_data(snd_bytes, &snd_size);
+    SF_VIRTUAL_IO vio = {0};
+    vio.get_filelen = mem_get_filelen;
+    vio.seek = mem_seek;
+    vio.read = mem_read;
+    vio.write = mem_write;
+    vio.tell = mem_tell;
+    struct MemFile memfile = {(const char *)snd_data, (sf_count_t)snd_size, 0};
+    SNDFILE *sndfile = sf_open_virtual(&vio, SFM_READ, &sfinfo, &memfile);
+    if (!sndfile)
+    {
+        fprintf(stderr, "[ERROR] No se pudo abrir alarma.wav desde memoria\n");
+        GtkWidget *dialog = gtk_message_dialog_new(NULL, GTK_DIALOG_MODAL, GTK_MESSAGE_ERROR, GTK_BUTTONS_OK, "No se pudo abrir alarma.wav (memoria)");
+        gtk_dialog_run(GTK_DIALOG(dialog));
+        gtk_widget_destroy(dialog);
+        g_bytes_unref(snd_bytes);
         alarma_sonando = 0;
         return NULL;
     }
@@ -380,7 +465,14 @@ void iniciar_ui()
     gtk_window_set_title(GTK_WINDOW(ventana), "AlarmaCIOM");
     gtk_window_set_default_size(GTK_WINDOW(ventana), 480, 520);
     gtk_window_set_position(GTK_WINDOW(ventana), GTK_WIN_POS_CENTER);
-    gtk_window_set_icon_from_file(GTK_WINDOW(ventana), "icono.png", NULL);
+    // Cargar icono desde recurso embebido
+    GError *icon_error = NULL;
+    GdkPixbuf *icon_pixbuf = gdk_pixbuf_new_from_resource("/com/alarma/app/icono.png", &icon_error);
+    if (icon_pixbuf)
+    {
+        gtk_window_set_icon(GTK_WINDOW(ventana), icon_pixbuf);
+        g_object_unref(icon_pixbuf);
+    }
 
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(ventana), vbox);
